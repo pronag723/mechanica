@@ -1,0 +1,286 @@
+{
+  "t01_atwood": {
+    "a": {
+      "value": 1.96,
+      "class": "exact",
+      "note": "a = (m1 - m2)*g/(m1 + m2); acceleration of each block, m1 moving down"
+    },
+    "T": {
+      "value": 23.52,
+      "class": "exact",
+      "note": "T = 2*m1*m2*g/(m1 + m2); string tension"
+    },
+    "t_m1_down_1m": {
+      "value": 1.01015254455221,
+      "class": "exact",
+      "note": "t_m1_down_1m = sqrt(2*d*(m1 + m2)/((m1 - m2)*g)); time from rest until m1 has descended d = 1 m"
+    },
+    "v_m1_down_1m": {
+      "value": 1.97989898732233,
+      "class": "exact",
+      "note": "v_m1_down_1m = sqrt(2*d*g*(m1 - m2)/(m1 + m2)); speed of m1 at that moment"
+    }
+  },
+  "t02a_table_frictionless": {
+    "a": {
+      "value": 1.96,
+      "class": "exact",
+      "note": "a = (m - mu_k*M)*g/(M + m); acceleration of each block, B moving down"
+    },
+    "T": {
+      "value": 7.84,
+      "class": "exact",
+      "note": "T = M*m*g*(1 + mu_k)/(M + m); string tension"
+    },
+    "N": {
+      "value": 39.2,
+      "class": "exact",
+      "note": "N = M*g; normal force on A"
+    }
+  },
+  "t02b_table_kinetic": {
+    "a": {
+      "value": 0.392,
+      "class": "exact",
+      "note": "a = (m - mu_k*M)*g/(M + m); acceleration of each block, B moving down"
+    },
+    "T": {
+      "value": 9.408,
+      "class": "exact",
+      "note": "T = M*m*g*(1 + mu_k)/(M + m); string tension"
+    },
+    "N": {
+      "value": 39.2,
+      "class": "exact",
+      "note": "N = M*g; normal force on A"
+    },
+    "F_fr": {
+      "value": 7.84,
+      "class": "exact",
+      "note": "F_fr = mu_k*M*g; kinetic friction on A, magnitude (it points away from the pulley)"
+    }
+  },
+  "t02c_table_static": {
+    "a": {
+      "value": 0.0,
+      "class": "exact",
+      "note": "a = 0; A stays at rest: static friction holds"
+    },
+    "T": {
+      "value": 9.8,
+      "class": "exact",
+      "note": "T = m*g; string tension"
+    },
+    "N": {
+      "value": 39.2,
+      "class": "exact",
+      "note": "N = M*g; normal force on A"
+    },
+    "F_fr": {
+      "value": 9.8,
+      "class": "exact",
+      "note": "F_fr = m*g; static friction on A, magnitude: it balances T and is NOT mu_s*N"
+    },
+    "F_fr_limit": {
+      "value": 11.76,
+      "class": "exact",
+      "note": "F_fr_limit = mu_s*M*g; static friction limit mu_s*N"
+    }
+  },
+  "t03_load_hits_floor": {
+    "a": {
+      "value": 1.96,
+      "class": "exact",
+      "note": "a = (m - mu_k*M)*g/(M + m); acceleration before the impact, B moving down"
+    },
+    "T1": {
+      "value": 15.68,
+      "class": "exact",
+      "note": "T1 = M*m*g*(1 + mu_k)/(M + m); string tension before the impact"
+    },
+    "t_impact": {
+      "value": 0.714285714285714,
+      "class": "exact",
+      "note": "t_impact = sqrt(2*h*(M + m)/((m - mu_k*M)*g)); time B hits the floor"
+    },
+    "v_impact": {
+      "value": 1.4,
+      "class": "exact",
+      "note": "v_impact = sqrt(2*g*h*(m - mu_k*M)/(M + m)); speed of B (and A) at the impact"
+    },
+    "a2": {
+      "value": -1.96,
+      "class": "exact",
+      "note": "a2 = -mu_k*g; acceleration of A along its motion after the impact"
+    },
+    "T2": {
+      "value": 0.0,
+      "class": "exact",
+      "note": "T2 = 0; string tension after the impact: the string is slack"
+    },
+    "t_stop": {
+      "value": 1.42857142857143,
+      "class": "exact",
+      "note": "t_stop = sqrt(2*h*(M + m)/((m - mu_k*M)*g))*(1 + (m - mu_k*M)/(mu_k*(M + m))); time A stops"
+    },
+    "path_A": {
+      "value": 1.0,
+      "class": "exact",
+      "note": "path_A = h*(1 + (m - mu_k*M)/(mu_k*(M + m))); total distance A travels"
+    }
+  },
+  "t14_two_strings": {
+    "T30": {
+      "value": 9.8,
+      "class": "exact",
+      "note": "T30 = m*g*cos(beta)/sin(alpha + beta); tension in the string at 30 deg to the horizontal"
+    },
+    "T60": {
+      "value": 16.974097914175,
+      "class": "exact",
+      "note": "T60 = m*g*cos(alpha)/sin(alpha + beta); tension in the string at 60 deg to the horizontal"
+    }
+  },
+  "t19c_bouncing_block": {
+    "t_impact1": {
+      "value": 0.451753951452626,
+      "class": "exact",
+      "note": "t_impact1 = sqrt(2*h/g); time of the first impact"
+    },
+    "v_impact1": {
+      "value": 4.42718872423573,
+      "class": "exact",
+      "note": "v_impact1 = sqrt(2*g*h); speed just before the first impact"
+    },
+    "v_rebound1": {
+      "value": 3.54175097938858,
+      "class": "exact",
+      "note": "v_rebound1 = e*sqrt(2*g*h); speed just after the first impact"
+    },
+    "h_bounce1": {
+      "value": 0.64,
+      "class": "exact",
+      "note": "h_bounce1 = e**2*h; height of the bottom face at the top of the first bounce"
+    },
+    "t_impact2": {
+      "value": 1.17456027377683,
+      "class": "exact",
+      "note": "t_impact2 = sqrt(2*h/g)*(1 + 2*e); time of the second impact"
+    },
+    "t_rest": {
+      "value": 4.06578556307363,
+      "class": "exact",
+      "note": "t_rest = sqrt(2*h/g)*(1 + e)/(1 - e); time the impacts accumulate and the block comes to rest; DESIGN 3.5 accepts the engine's Zeno cutoff within 1e-6 s of this value"
+    }
+  },
+  "x01_block_slides_to_stop": {
+    "a": {
+      "value": -1.96,
+      "class": "exact",
+      "note": "a = -mu_k*g; acceleration along v0 while sliding"
+    },
+    "F_fr": {
+      "value": -1.96,
+      "class": "exact",
+      "note": "F_fr = -mu_k*M*g; kinetic friction, signed along v0"
+    },
+    "N": {
+      "value": 9.8,
+      "class": "exact",
+      "note": "N = M*g; normal force"
+    },
+    "t_stop": {
+      "value": 1.02040816326531,
+      "class": "exact",
+      "note": "t_stop = v0/(mu_k*g); time the block stops (and sticks)"
+    },
+    "s_stop": {
+      "value": 1.02040816326531,
+      "class": "exact",
+      "note": "s_stop = v0**2/(2*mu_k*g); path length until the stop"
+    }
+  },
+  "x02a_force_below_static": {
+    "a": {
+      "value": 0.0,
+      "class": "exact",
+      "note": "a = 0; the block stays at rest"
+    },
+    "F_fr": {
+      "value": -1.5,
+      "class": "exact",
+      "note": "F_fr = -F; static friction, signed along F"
+    },
+    "N": {
+      "value": 9.8,
+      "class": "exact",
+      "note": "N = M*g; normal force"
+    },
+    "F_fr_limit": {
+      "value": 1.96,
+      "class": "exact",
+      "note": "F_fr_limit = mu_s*M*g; static friction limit mu_s*N"
+    }
+  },
+  "x02b_force_above_static": {
+    "a": {
+      "value": 1.52,
+      "class": "exact",
+      "note": "a = (F - mu_k*M*g)/M; acceleration along F; it slips from t = 0"
+    },
+    "F_fr": {
+      "value": -0.98,
+      "class": "exact",
+      "note": "F_fr = -mu_k*M*g; kinetic friction, signed along F"
+    },
+    "N": {
+      "value": 9.8,
+      "class": "exact",
+      "note": "N = M*g; normal force"
+    }
+  },
+  "x03_whirl_slack": {
+    "cos_phi_slack": {
+      "value": -0.557823129251701,
+      "class": "ode",
+      "note": "cos_phi_slack = (2*g*L - v0**2)/(3*g*L); cos of the angle from the downward vertical where the string goes slack"
+    },
+    "v_slack": {
+      "value": 2.33809038890002,
+      "class": "ode",
+      "note": "v_slack = sqrt((v0**2 - 2*g*L)/3); speed when the string goes slack"
+    },
+    "h_slack": {
+      "value": 1.5578231292517,
+      "class": "ode",
+      "note": "h_slack = L + (v0**2 - 2*g*L)/(3*g); height above the bottom point when the string goes slack"
+    },
+    "t_slack": {
+      "value": 0.484782143248215,
+      "class": "ode",
+      "note": "t_slack = Integral(L/sqrt(v0**2 - 2*g*L*(1 - cos(phi))), (phi, 0, acos((2*g*L - v0**2)/(3*g*L)))); time from the start until the string goes slack"
+    }
+  },
+  "x04_slides_off_table": {
+    "t_fall": {
+      "value": 0.404061017820884,
+      "class": "exact",
+      "note": "t_fall = sqrt(2*H/g); free-fall time from leaving the edge to the floor"
+    },
+    "dx_fall": {
+      "value": 0.808122035641769,
+      "class": "exact",
+      "note": "dx_fall = v0*sqrt(2*H/g); horizontal distance flown"
+    },
+    "vy_landing": {
+      "value": -3.95979797464467,
+      "class": "exact",
+      "note": "vy_landing = -sqrt(2*g*H); vertical velocity just before landing (y up)"
+    },
+    "v_after_landing": {
+      "value": 2.0,
+      "class": "exact",
+      "note": "v_after_landing = v0; speed along the floor after landing: e = 0 and the floor is frictionless"
+    }
+  }
+}

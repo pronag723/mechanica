@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+
+# Written byte-for-byte by the oracle; CI diffs it against a fresh run.
+tests/scenes/expected.json
+
+# Hand-written design documents and prompts keep their own layout.
+CLAUDE.md
+docs/
+prompts/

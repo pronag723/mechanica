@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build and tool output
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+.eslintcache
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# local overrides
+*.local
+.env
+.env.*
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS and editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+*.swp
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json

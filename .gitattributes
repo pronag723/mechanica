@@ -1,0 +1,7 @@
+# LF everywhere, so files generated on Windows (expected.json) are byte-identical to CI's.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

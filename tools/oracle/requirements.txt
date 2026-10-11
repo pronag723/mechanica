@@ -1,0 +1,3 @@
+# Pinned so expected.json is byte-identical on every machine. sympy 1.14 needs mpmath < 1.4.
+sympy==1.14.0
+mpmath==1.3.0

@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // No DOM and no Node globals in the engine; test tooling brings its own types.
+    "types": []
+  },
+  "include": ["src", "tests", "vitest.config.ts"]
+}

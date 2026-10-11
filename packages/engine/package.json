@@ -1,0 +1,18 @@
+{
+  "name": "@mech/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Event-driven hybrid simulator for 2D textbook mechanics. No DOM, no runtime dependencies, deterministic.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.3"
+  }
+}
