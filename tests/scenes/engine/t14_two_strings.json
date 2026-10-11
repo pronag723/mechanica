@@ -1,0 +1,64 @@
+{
+  "id": "t14_two_strings",
+  "description": "Statics (DESIGN §8 test 14): m = 2 kg hangs from two strings tied to the ceiling (y = 1), at 30° (left) and 60° (right) to the horizontal; both meet at the body's top centre, the origin. The x coordinates of the fixed points are the doubles nearest −√3 and 1/√3. The variant adds a vertical third string, which makes the tensions statically indeterminate.",
+  "spec": {
+    "gravity": { "x": 0, "y": -9.8 },
+    "bodies": [
+      {
+        "id": "B",
+        "symbol": "m",
+        "mass": 2,
+        "shape": { "kind": "box", "w": 0.25, "h": 0.25 },
+        "position": { "x": 0, "y": -0.125 }
+      }
+    ],
+    "statics": [],
+    "pulleys": [],
+    "strings": [
+      {
+        "id": "s30",
+        "symbol": "T₁",
+        "route": [
+          { "kind": "fixed", "point": { "x": -1.7320508075688772, "y": 1 } },
+          { "kind": "body", "body": "B", "anchor": { "x": 0, "y": 0.125 } }
+        ]
+      },
+      {
+        "id": "s60",
+        "symbol": "T₂",
+        "route": [
+          { "kind": "fixed", "point": { "x": 0.5773502691896258, "y": 1 } },
+          { "kind": "body", "body": "B", "anchor": { "x": 0, "y": 0.125 } }
+        ]
+      }
+    ],
+    "options": { "horizon": 100 }
+  },
+  "variants": {
+    "three_strings": {
+      "strings": [
+        {
+          "id": "s30",
+          "route": [
+            { "kind": "fixed", "point": { "x": -1.7320508075688772, "y": 1 } },
+            { "kind": "body", "body": "B", "anchor": { "x": 0, "y": 0.125 } }
+          ]
+        },
+        {
+          "id": "s60",
+          "route": [
+            { "kind": "fixed", "point": { "x": 0.5773502691896258, "y": 1 } },
+            { "kind": "body", "body": "B", "anchor": { "x": 0, "y": 0.125 } }
+          ]
+        },
+        {
+          "id": "s90",
+          "route": [
+            { "kind": "fixed", "point": { "x": 0, "y": 1 } },
+            { "kind": "body", "body": "B", "anchor": { "x": 0, "y": 0.125 } }
+          ]
+        }
+      ]
+    }
+  }
+}

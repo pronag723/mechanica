@@ -1,0 +1,37 @@
+{
+  "id": "t01_atwood",
+  "description": "Atwood machine (DESIGN §8 test 1): m1 = 3 kg and m2 = 2 kg hang from one string over a massless pulley. Both segments are exactly vertical.",
+  "spec": {
+    "gravity": { "x": 0, "y": -9.8 },
+    "bodies": [
+      {
+        "id": "m1",
+        "symbol": "m₁",
+        "mass": 3,
+        "shape": { "kind": "box", "w": 0.25, "h": 0.25 },
+        "position": { "x": -0.25, "y": -2 }
+      },
+      {
+        "id": "m2",
+        "symbol": "m₂",
+        "mass": 2,
+        "shape": { "kind": "box", "w": 0.25, "h": 0.25 },
+        "position": { "x": 0.25, "y": -2 }
+      }
+    ],
+    "statics": [],
+    "pulleys": [{ "id": "pulley", "center": { "x": 0, "y": 0 }, "radius": 0.25 }],
+    "strings": [
+      {
+        "id": "string",
+        "symbol": "T",
+        "route": [
+          { "kind": "body", "body": "m1", "anchor": { "x": 0, "y": 0.125 } },
+          { "kind": "pulley", "pulley": "pulley", "wrap": "cw" },
+          { "kind": "body", "body": "m2", "anchor": { "x": 0, "y": 0.125 } }
+        ]
+      }
+    ],
+    "options": { "horizon": 1.2 }
+  }
+}

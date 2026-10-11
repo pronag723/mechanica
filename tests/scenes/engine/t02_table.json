@@ -1,0 +1,54 @@
+{
+  "id": "t02_table",
+  "description": "Block A (M = 4 kg) on a table, string over a pulley at the table's edge to B (m = 1 kg) hanging (DESIGN §8 test 2). The base material is frictionless (2a); variants set the A–table pair to μ = 0.2 (2b, slips) and μ = 0.3 (2c, holds). The string leaves A exactly horizontally and reaches B exactly vertically.",
+  "spec": {
+    "gravity": { "x": 0, "y": -9.8 },
+    "bodies": [
+      {
+        "id": "A",
+        "symbol": "A",
+        "mass": 4,
+        "shape": { "kind": "box", "w": 0.5, "h": 0.25 },
+        "position": { "x": -2, "y": 0.125 }
+      },
+      {
+        "id": "B",
+        "symbol": "B",
+        "mass": 1,
+        "shape": { "kind": "box", "w": 0.25, "h": 0.25 },
+        "position": { "x": 0.25, "y": -0.75 }
+      }
+    ],
+    "statics": [
+      {
+        "id": "table",
+        "kind": "convexPolygon",
+        "vertices": [
+          { "x": -3, "y": -1 },
+          { "x": 0, "y": -1 },
+          { "x": 0, "y": 0 },
+          { "x": -3, "y": 0 }
+        ],
+        "material": { "muS": 0, "muK": 0, "restitution": 0 }
+      }
+    ],
+    "pulleys": [{ "id": "pulley", "center": { "x": 0.125, "y": 0 }, "radius": 0.125 }],
+    "strings": [
+      {
+        "id": "string",
+        "symbol": "T",
+        "route": [
+          { "kind": "body", "body": "A", "anchor": { "x": 0.25, "y": 0 } },
+          { "kind": "pulley", "pulley": "pulley", "wrap": "cw" },
+          { "kind": "body", "body": "B", "anchor": { "x": 0, "y": 0.125 } }
+        ]
+      }
+    ],
+    "options": { "horizon": 1 }
+  },
+  "variants": {
+    "t02a_table_frictionless": {},
+    "t02b_table_kinetic": { "pairOverrides": [{ "a": "A", "b": "table", "muS": 0.2, "muK": 0.2 }] },
+    "t02c_table_static": { "pairOverrides": [{ "a": "A", "b": "table", "muS": 0.3, "muK": 0.3 }] }
+  }
+}

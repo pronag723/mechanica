@@ -5,7 +5,7 @@
 |---|---|---|
 | 00 | Bootstrap: monorepo, tooling, CI, SymPy oracle | ☑ |
 | 01 | Numerics: LU/QR, DOPRI5 with dense output, event location | ☑ |
-| 02 | Model spec, constraints, instantaneous KKT solve | ☐ |
+| 02 | Model spec, constraints, instantaneous KKT solve | ☑ |
 | 03 | Hybrid simulator: phases, guards, mode selection, probes, queries | ☐ |
 | 04 | Impacts, slack/taut, Zeno, terminal events, CLI (Phase 0 exit) | ☐ |
 | 05 | App shell and design system | ☐ |
@@ -151,11 +151,99 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
 - `maxSteps` counts attempts over the stepper's whole life; `restart` does not reset it.
 - I chose Brent over Illinois for `findRoot`, as the prompt allowed.
 
+### 2026-10-11 · 02 Model spec, constraints, instantaneous KKT solve
+**Built** (`packages/engine/src/`, all exported from the package root; see the README's "Model" section)
+- `spec.ts`: `ModelSpec`, plain JSON with `{ x, y }` vectors. Bodies (box or convex polygon, fixed
+  `angle`, optional `velocity`), statics (half-plane or convex polygon, with a material), pair
+  overrides, fixed pulleys (R ≥ 0), strings (`[end, …pulley vias, end]`, optional `restLength`),
+  constant applied forces, options.
+- `model/`: `compileModel(spec) → { model | null, diagnostics }`.
+  - `validate.ts`: ids, numbers, shapes, references and route structure; nothing throws.
+  - DOFs: x, y per body in id order. Constraints sorted by id: one per string, and one contact
+    candidate `c:<body>:<static>:<face>` per body × support face.
+  - At t₀ it checks: tangents exist; no segment < 1e-9·L*; no wrap within 1e-9 rad of 0 or 2π;
+    the string is not longer than its rest length; no body overlaps a support (separating axes,
+    tolerance 1e-9·L*).
+  - Scene scales (L*, V*, F*, time) are defined here already, since the t₀ tolerances need L*.
+- `geometry/string-path.ts`: one tangent formula for all four cases. With signed radii (ρ = ±R by
+  wrap side, 0 at ends), D = c_B − c_A and Δρ = ρ_B − ρ_A, the direction is
+  d = (ℓ·D − Δρ·n(D))/|D|² with ℓ = √(|D|² − Δρ²). Wraps are turning angles in the wrap sense, in
+  [0, 2π). There is a non-allocating core (`traceString` on typed arrays) and a plain-object wrapper
+  (`stringPath`, `stringGeometry`) for drawing.
+- `constraints/`: `evalConstraint(c, t, q, v, row)` fills value, sparse J and J̇v into a reusable
+  `ConstraintRow` without allocating.
+  - String: J = +d₀ / −d_last on the end bodies; J̇v = −Σ(Δv × d)²/ℓ. The proofs are in comments.
+  - Contact: g = n·p + depth − offset, with the support function precomputed (rotation is locked).
+  - Also: `contactOverlap` (validity domain), `contactPoint`, `evalContactTangent`.
+- `mode.ts`: `Mode { active, friction }`, `normalizeMode`, `modeKey`, `assertValidMode`.
+- `kkt/`, `solve.ts`, `forces.ts`: `solveAccelerations(model, mode, t, q, v)` assembles
+  [M −C; J 0]. Sliding contacts get the column (J_n − μk·s·J_t)ᵀ; stick contacts get a tᵀ row.
+  - Fast path: pivoted QR shows rank(J) = rank(C) = #multipliers, then LU.
+  - Otherwise: the KKT is scaled by exact powers of two, then a complete orthogonal decomposition
+    gives the minimum-norm solution and the null space. That separates `STATICALLY_INDETERMINATE`
+    (null vectors in λ only) from `MOTION_UNDETERMINED` (a null vector moves a body, or the system
+    is inconsistent).
+  - Output: `a`, `lambda`, `frictionLambda`, `indeterminate`, and a force breakdown whose sum per
+    body is m·a.
+- Scenes in `tests/scenes/engine/`: `t01_atwood`, `t02_table` (variants 2a/2b/2c as pair
+  overrides), `t03_load_hits_floor`, `t14_two_strings` (variant `three_strings`).
+  - Each file is an envelope `{ id, description, spec, variants? }`; the format is in that folder's
+    README.
+  - Coordinates are dyadic, so the t01–t03 segments come out **exactly** axis-aligned and the gaps
+    exactly 0. The tests assert `===`.
+- `ENGINE_VERSION` 0.2.0. 91 new tests (201 in total).
+
+**Results**
+- Instantaneous solves against `expected.json` (asserted ≤ 1e-12): every value is within
+  2.8e-16 relative. t02c gives a = 0 exactly, and t14 gives |a| = 8.9e-16.
+- Finite differences (central, 4-level Richardson) over 90 random string configurations in 15
+  categories (worst errors):
+  - gradient: 1.6e-12 (asserted 1e-9);
+  - curvature by second differences: 2.7e-10 relative, limited by rounding (asserted 1e-9);
+  - curvature as d/ds(J·v): 4.0e-13 (asserted 1e-10).
+- Contact gaps for boxes and polygons at 6 angles each (half-planes and a polygon support):
+  - the value matches a brute-force vertex minimum to ≤ 1.6e-15;
+  - the gradient is within 1e-12, and the curvature is exactly 0.
+- String lengths agree with an independent angle-based construction to 1e-13 relative.
+
+**Performance** (Node 22.22.2, Windows 11, warm)
+- `solveAccelerations` on t02b: 9.4 µs per call (2 bodies, 2 multipliers). This includes the two
+  QR rank checks and the allocation of the output records.
+- `compileModel` on t02b: 37 µs.
+- The whole `pnpm test` run takes 1.5 s.
+
+**Decisions** (the prompt left these open)
+- Vectors are `{ x, y }` objects in the spec. `angle` and `velocity` are optional (default 0).
+- Codes beyond the prompt's list: `INVALID_ID`, `INVALID_PARAMETER`, `SHAPE_INVALID`,
+  `STRING_OVERSTRETCHED`.
+- **Any compile error means `model: null`**, so a known-inconsistent scene is never simulated.
+- A wrap angle of 0 at t₀ (a string that only touches a pulley) is an **error**, not a warning.
+  Wraps are reduced to [0, 2π), so a string that leaves the pulley would silently "wrap all the
+  way round".
+- Contact provenance `elementId` is the body (forces are drawn on it); `elementIds` lists the body
+  and the support.
+- `frictionLambda` holds the signed friction along +t for **every** active contact: λ_t when it
+  sticks, −μk·s·λ_n (derived) when it slips. `indeterminateFriction`, `status` and
+  `ForceContribution.indeterminate` were added to the output.
+- Every active contact needs a friction state, frictionless ones included (slip then adds nothing).
+- The tangent formula uses |D|² − Δρ² directly rather than (|D| − |Δρ|)(|D| + |Δρ|). It is exact
+  for dyadic inputs, which keeps textbook segments exactly axis-aligned, and the factored form is no
+  better conditioned because |D| is itself rounded.
+- Results avoid −0: tangents, normals and the zero friction of a μk = 0 contact are computed as
+  `0 − x`.
+
 ## Deviations from DESIGN.md
 - None. DESIGN §7 asks to check DOPRI5 "against the reference outputs". I checked the coefficients
   against Hairer's source and by order conditions, and the behaviour on his test problems
   (Arenstorf), but I did not diff step-by-step output against his Fortran driver: no Fortran
   toolchain here.
+- **Redundancy with sliding friction (prompt 02).** DESIGN §3.2 says that when the active
+  constraints are redundant, "the motion is still unique but the forces are indeterminate". That
+  holds when the force columns are Jᵀ. With sliding friction they are (J_n − μk·s·J_t)ᵀ, and
+  redundancy can leave the motion itself undetermined. Example: a block sliding on two coincident
+  floors with different μk, where the split of N decides the friction and hence a_x. The solver
+  therefore analyses the null space of the whole KKT matrix rather than only rank(J_A). Such cases
+  report `MOTION_UNDETERMINED`; the rest report `STATICALLY_INDETERMINATE` as designed.
 
 ## Follow-ups
 - **t19c rest time (prompt 04).** DESIGN §3.5 accepts the engine's Zeno cutoff within 1e-6 s of
@@ -169,9 +257,30 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
   type-aware ESLint block to `apps/**/*.{ts,tsx}` with the DOM globals.
 - **TypeScript 7.** Move to it when typescript-eslint supports it.
 - **Node 24.** Bump `.nvmrc` to 24 (the active LTS) when convenient; CI follows `.nvmrc`.
-- **Rank decisions (prompt 02/03).** LU's `singular` flag is a scale-invariant heuristic. Decide
-  redundancy and indeterminacy with `rank`/`nullSpace` on J_A at each mode start (DESIGN §3.2).
-  KKT solves inside the RHS or the λ(t) guards should use `luFactorInto` to avoid allocating.
+- **KKT inside the RHS (prompt 03).** `solveAccelerations` allocates and runs two QR rank checks
+  on every call (9.4 µs on t02b). In the ODE right-hand side and the λ(t) guards, run the rank
+  analysis (`solveKkt`) once per mode. Then call `assembleKkt` (no allocation) and
+  `luFactorInto` + `luSolve` on `sys.K`/`sys.rhs`; strings are `linear: false`, so re-assemble on
+  each call. `forceBreakdown` allocates a trace per string; keep it out of hot paths.
+- **Mode validation with indeterminate forces (prompt 03).** For a statically indeterminate mode
+  the returned λ are the minimum-norm split, which can be negative even when a split with all
+  λ ≥ 0 exists. "active ⇒ λ ≥ 0" must then be checked as feasibility over λ_p + null(C) (a small
+  LP), not on the min-norm values.
+- **Contact candidates (prompt 03).** Every body × face is a candidate, including faces that look
+  away from the body (for a block on a table, the table's bottom face has a large negative gap).
+  Candidates for activation need `contactOverlap > 0` and a small |gap|; a touchdown guard must
+  combine "gap crosses 0 downward" with overlap > 0.
+- **Wrap-angle guard (prompts 03–04).** `trace.wrap` is reduced to [0, 2π) and jumps at the cut.
+  The "wrap → 0" guard needs a continuous branch, e.g. unwrap relative to the value at the phase
+  start.
+- **Static corners against body faces (prompt 04).** Contacts are body × support face only. A
+  support polygon's vertex can therefore enter a body's face unnoticed (a block falling onto a
+  wedge's apex, or sliding past a corner). The body–body separating-axis guard planned for
+  `BODY_CONTACT_UNSUPPORTED` should also cover bodies against polygon supports, using
+  `staticSeparation`.
+- **Scene variants (prompt 04).** Scene files may carry `variants` (shallow spec overrides, e.g.
+  `t02a/b/c`). The table-driven harness must expand them, keyed by the variant name in
+  `expected.json`.
 - **hmax vs. exactness (prompt 03).** Uniformly accelerated motion is exact to 2.7e-14 over 500
   steps but 1.7e-13 over 5000, because rounding in y ← y + h·Σbk accumulates. If the simulator caps
   hmax tightly for guard sampling, consider compensated (Kahan) summation of the state update.
@@ -189,6 +298,10 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
 - HINIT returns h = 0 when the scaled norm ‖f₀‖ overflows (|f|/atol > ~1e154), and the run then
   fails at once with `step-size-too-small` at t₀. Hairer's code does the same. SI-unit scenes are
   nowhere near it.
+- μk > μs is accepted without a diagnostic. Mode selection may then find both stick and slip
+  valid at v_t = 0 (`MODE_NOT_UNIQUE`, prompt 03).
+- A pulley may appear twice in one route (not consecutively). The geometry handles it, but no test
+  covers it.
 - `pnpm oracle` uses the first `python` on PATH. On this machine another Python install with SymPy 1.13.1
   can shadow Python 3.14, depending on PATH order. The output is identical, and the oracle prints which
   interpreter it used and warns when SymPy differs from the pinned version.
