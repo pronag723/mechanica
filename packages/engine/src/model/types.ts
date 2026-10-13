@@ -3,7 +3,7 @@
  * instances. Plain data (typed arrays, Maps), structured-clone safe; behaviour lives in pure
  * functions (constraints/, kkt/, solve.ts).
  */
-import type { Material, SimulationOptions, Vec2, Wrap } from '../spec';
+import type { Material, QuerySpec, SimulationOptions, Vec2, Wrap } from '../spec';
 
 /**
  * Scene scales, defined once and used for every tolerance.
@@ -148,5 +148,7 @@ export interface Model {
   readonly v0: Float64Array;
   /** Largest route length over all strings (sizes scratch traces). */
   readonly maxRouteNodes: number;
+  /** Event queries, sorted by id (references checked by the compiler). */
+  readonly queries: readonly QuerySpec[];
   readonly options: SimulationOptions;
 }

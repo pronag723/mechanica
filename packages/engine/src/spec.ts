@@ -134,6 +134,54 @@ export interface SimulationOptions {
   readonly maxEvents?: number;
 }
 
+/**
+ * A quantity that can be read off a trajectory (probes, graphs, queries). Vectors are taken in
+ * world axes; `axis` may name a world axis or give a direction (normalized by the engine).
+ * - `bodyDisplacement`: p(t) − p(0) (p(0) after the initial projection); its component along
+ *   `axis`, or its length |p(t) − p(0)| when `axis` is omitted.
+ * - `bodyPathLength`: ∫|v| dt from 0.
+ * - Energies: of one body, or summed over all bodies when `body` is omitted. The potential energy
+ *   is gravity's, −m·g·p, zero at the world origin.
+ * - `stringTension`, `contactNormal`: the multiplier λ ≥ 0 (0 while inactive).
+ * - `contactFriction`: the signed friction force along the face tangent +t (0 while inactive).
+ * - `contactRegime`: a numeric code, see CONTACT_REGIME in the simulator.
+ */
+export type Axis = 'x' | 'y' | Vec2;
+
+export type ProbeRef =
+  | { readonly kind: 'bodyPosition'; readonly body: string; readonly component: 'x' | 'y' }
+  | { readonly kind: 'bodyDisplacement'; readonly body: string; readonly axis?: Axis }
+  | { readonly kind: 'bodyVelocity'; readonly body: string; readonly component: 'x' | 'y' }
+  | { readonly kind: 'bodySpeed'; readonly body: string }
+  | { readonly kind: 'bodyAcceleration'; readonly body: string; readonly component: 'x' | 'y' }
+  | { readonly kind: 'bodyPathLength'; readonly body: string }
+  | { readonly kind: 'kineticEnergy'; readonly body?: string }
+  | { readonly kind: 'potentialEnergy'; readonly body?: string }
+  | { readonly kind: 'totalEnergy'; readonly body?: string }
+  | { readonly kind: 'stringTension'; readonly string: string }
+  | { readonly kind: 'contactNormal'; readonly contact: string }
+  | { readonly kind: 'contactFriction'; readonly contact: string }
+  | { readonly kind: 'contactRegime'; readonly contact: string };
+
+/**
+ * When the probe equals `value` (optionally only while rising or falling), or when it has a local
+ * maximum or minimum. Queries are guards: they record hits and never change the motion.
+ */
+export type QueryCondition =
+  | {
+      readonly kind: 'equals';
+      readonly value: number;
+      readonly direction?: 'rising' | 'falling' | 'any';
+    }
+  | { readonly kind: 'max' }
+  | { readonly kind: 'min' };
+
+export interface QuerySpec {
+  readonly id: string;
+  readonly probe: ProbeRef;
+  readonly condition: QueryCondition;
+}
+
 export interface ModelSpec {
   /** Gravitational acceleration, usually { x: 0, y: −9.8 }. */
   readonly gravity: Vec2;
@@ -143,5 +191,7 @@ export interface ModelSpec {
   readonly pulleys: readonly PulleySpec[];
   readonly strings: readonly StringSpec[];
   readonly appliedForces?: readonly AppliedForceSpec[];
+  /** Event queries, evaluated by simulate() (prompt 03). */
+  readonly queries?: readonly QuerySpec[];
   readonly options: SimulationOptions;
 }

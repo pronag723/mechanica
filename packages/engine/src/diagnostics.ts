@@ -16,7 +16,17 @@ export type DiagnosticCode =
   | 'BODY_PENETRATES_STATIC'
   // Solve time (solveAccelerations)
   | 'STATICALLY_INDETERMINATE'
-  | 'MOTION_UNDETERMINED';
+  | 'MOTION_UNDETERMINED'
+  // Run time (simulate)
+  | 'INITIAL_VELOCITY_PROJECTED'
+  | 'NO_CONSISTENT_MODE'
+  | 'MODE_NOT_UNIQUE'
+  | 'BOUNDARY_CASE'
+  | 'TOO_MANY_CANDIDATES'
+  | 'EVENT_LIMIT'
+  | 'QUERY_UNSUPPORTED'
+  | 'INDETERMINATE_REGIME_CHANGE'
+  | 'INTEGRATION_FAILED';
 
 export type Severity = 'error' | 'warning' | 'info';
 

@@ -8,6 +8,7 @@ import { rotateVertices, shapeVertices } from '../geometry/shapes';
 import { compareIds } from '../ids';
 import type { ModelSpec } from '../spec';
 import { buildContacts, penetrationDiagnostics } from './contacts';
+import { compileQueries } from './queries';
 import { computeScales } from './scales';
 import { compileRoute, compileString } from './strings';
 import type {
@@ -87,6 +88,13 @@ export function compileModel(spec: ModelSpec): CompileResult {
   const indexed: Constraint[] = constraints.map((c, index) =>
     c.kind === 'string' ? { ...c, index } : { ...c, index },
   );
+  const queries = compileQueries(
+    spec,
+    new Set(bodyIndex.keys()),
+    new Map(indexed.map((c) => [c.id, c])),
+    diagnostics,
+  );
+  if (hasErrors(diagnostics)) return { model: null, diagnostics };
 
   const appliedForces: ModelAppliedForce[] = [...(spec.appliedForces ?? [])]
     .sort((a, b) => compareIds(a.id, b.id))
@@ -119,6 +127,7 @@ export function compileModel(spec: ModelSpec): CompileResult {
     q0,
     v0,
     maxRouteNodes,
+    queries,
     options: { ...spec.options },
   };
   return { model, diagnostics };

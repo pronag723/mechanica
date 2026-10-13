@@ -1,0 +1,29 @@
+{
+  "id": "x01_block_slides_to_stop",
+  "description": "A block (M = 1 kg) slides on a floor with v0 = 2 m/s along +x, μs = μk = 0.2. Kinetic friction stops it at t = v0/(μk·g); then static friction holds it (nothing pushes it). Tests the stopOrReverse event, sticking and the at-rest span.",
+  "spec": {
+    "gravity": { "x": 0, "y": -9.8 },
+    "bodies": [
+      {
+        "id": "A",
+        "symbol": "A",
+        "mass": 1,
+        "shape": { "kind": "box", "w": 0.25, "h": 0.25 },
+        "position": { "x": 0, "y": 0.125 },
+        "velocity": { "x": 2, "y": 0 }
+      }
+    ],
+    "statics": [
+      {
+        "id": "floor",
+        "kind": "halfPlane",
+        "point": { "x": 0, "y": 0 },
+        "normal": { "x": 0, "y": 1 },
+        "material": { "muS": 0.2, "muK": 0.2, "restitution": 0 }
+      }
+    ],
+    "pulleys": [],
+    "strings": [],
+    "options": { "horizon": 2 }
+  }
+}

@@ -6,7 +6,7 @@
 | 00 | Bootstrap: monorepo, tooling, CI, SymPy oracle | ☑ |
 | 01 | Numerics: LU/QR, DOPRI5 with dense output, event location | ☑ |
 | 02 | Model spec, constraints, instantaneous KKT solve | ☑ |
-| 03 | Hybrid simulator: phases, guards, mode selection, probes, queries | ☐ |
+| 03 | Hybrid simulator: phases, guards, mode selection, probes, queries | ☑ |
 | 04 | Impacts, slack/taut, Zeno, terminal events, CLI (Phase 0 exit) | ☐ |
 | 05 | App shell and design system | ☐ |
 | 06 | Scene document | ☐ |
@@ -232,9 +232,109 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
 - Results avoid −0: tangents, normals and the zero friction of a μk = 0 contact are computed as
   `0 − x`.
 
+### 2026-10-13 · 03 Hybrid simulator
+**Built** (`packages/engine/src/sim/`, exported from the package root; see the README's "Simulator")
+- `simulate(model, opts?) → Trajectory`: one DOPRI5 stepper for the run, restarted at events; the
+  RHS solves the phase's KKT system (`phase-solver.ts`: rank analysis once per phase, K factored
+  once when every active row is linear, re-assembled without allocating otherwise).
+  - Drift projection after each accepted step with a string active: mass-weighted Gauss–Newton
+    (≤ 3 iterations, 1e-12·L\*), then the M-metric velocity projection. An armed guard changing
+    sign across the projection jump is an event (it would otherwise fall between two steps).
+  - Guards (`guards.ts`) for every row of the prompt's table, located with `locateEvents`;
+    simultaneous hits get one mode selection, and one event record per constraint.
+  - At rest (v = 0 and a = 0 exactly): `atRestFrom`, then one constant step to the horizon.
+  - End reasons: horizon, impactNotImplemented, noConsistentMode, tooManyCandidates, terminal,
+    eventLimit (maxEvents, or 16 consecutive events at one instant), indeterminateRegimeChange,
+    integrationFailed.
+- Mode selection (`mode-select.ts`) over an abstract problem, plus the model adapter
+  (`model-modes.ts`). Every combination is evaluated, ordered by distance from the current mode.
+  Statically indeterminate modes are validated by LP feasibility of the load split
+  (`feasibility.ts`, vertex enumeration), not on the minimum-norm λ.
+- Re-trigger protection, three layers (documented in `phase.ts` and the README): the snap; a guard
+  inside its ε-band at the phase start is pending until it clears the band on its home side (armed
+  from that sample via a new per-guard `from`/`to` window in `locateEvents`); the state a guard
+  fired from is forbidden in the mode selection at that instant.
+- Trajectory (`types.ts`): plain data, phases with `y0`, stored CONTD5 coefficients and `uniform`.
+  `stateAt`, `phaseAt`, `forcesAt`, `probeValue`, `sampleProbe` (`trajectory.ts`).
+- Probes (13 kinds) and queries (`spec.queries`: equals with a direction, max, min). Path length is
+  computed after the fact: each step is split at the zeros of v_x and v_y, then 8-point
+  Gauss–Legendre, cached per trajectory.
+- Spec and model: `ModelSpec.queries` and `Model.queries` (compile checks ids and references); new
+  diagnostic codes `INITIAL_VELOCITY_PROJECTED`, `NO_CONSISTENT_MODE`, `MODE_NOT_UNIQUE`,
+  `BOUNDARY_CASE`, `TOO_MANY_CANDIDATES`, `EVENT_LIMIT`, `QUERY_UNSUPPORTED`,
+  `INDETERMINATE_REGIME_CHANGE`, `INTEGRATION_FAILED`.
+- Scenes: `x01_block_slides_to_stop`, `x02_pushed_block` (variants x02a and x02b),
+  `x03_whirl_slack`; t01 gained the query `m1_down_1m`.
+- `ENGINE_VERSION` 0.3.0. 37 new tests (238 in total): synthetic mode selection
+  (`mode-select.test.ts`), the scenes (`tests/simulate.test.ts`), events
+  (`simulate-events.test.ts`: leftSurface, breakLoose, lift-off) and behaviour
+  (`simulate-behaviour.test.ts`).
+
+**Results** (relative errors against expected.json)
+- t01: query hit 1.1e-15, speed there 1.6e-15, T 1.5e-16; positions at 1000 dense times within
+  8.9e-16 m of the quadratic. t02b: a 2.8e-16, T 1.9e-16. x01: t_stop and path 4.1e-15.
+- x03 (class `ode`): t_slack 8.2e-12, cos φ 2.7e-11, v 1.3e-11, path along the arc 1.2e-11; the
+  constraint residual stays ≤ 1.1e-11 over 2000 dense times before slack (bound 1e-10); total
+  energy drift 9.5e-11 over the whole run, slack included; largest corrections 1.1e-12 m and
+  9.6e-13 m/s.
+- Event counts: x01 exactly 1 (`stopOrReverse`), x03 exactly 2 (`slack`, `taut`), x02b none (it
+  slips from v_t = 0 without a stop event); no two events within 1e-9 s in any scene.
+- Checks without oracle keys: breakLoose fires at |F_fr| = μs·N to 1e-9 and kinetic friction
+  follows; lift-off happens at T = m·g to 1e-9 and gives one `separation` record; leftSurface then
+  free fall matches x04's t_fall and v_y; a block rising into its pulley ends with `terminal` at
+  the analytic root; the max-height query after slack matches the parabola to 1e-7.
+
+**Performance** (Node 22.22.2, Windows 11, warm, median of 31 runs)
+
+| scene | ms | steps | RHS evals | events |
+|---|---|---|---|---|
+| t01 Atwood (1.2 s, with a query) | 0.84 | 6 | 39 | 1 |
+| t02a / t02b (1 s) | 0.92 / 0.96 | 5 | 32 | 0 |
+| t02c (at rest) | 0.31 | 0 | 0 | 0 |
+| t03 (up to the impact) | 0.78 | 4 | 26 | 1 |
+| t14 three strings (100 s, indeterminate) | 12.3 | 194 | 1166 | 0 |
+| x01 | 0.30 | 9 | 56 | 1 |
+| x02a / x02b | 0.12 / 0.23 | 0 / 8 | 0 / 50 | 0 |
+| x03 (pendulum, then flight, 1.28 s) | 2.2 | 107 | 666 | 2 |
+
+The performance test asserts t01 and x01 under 20 ms (measured 0.5–0.9 ms inside Vitest).
+Uniform phases take few steps because DOPRI5's error estimate is ≈ 0, so h grows ×10 per step up
+to hmax = T\*. In short runs most of the time is fixed cost: guard setup, mode selection, the
+uniformity check.
+
+**Decisions** (the prompt left these open)
+- **Coulomb's rule is a law, not a tie.** At v_t = 0 with μk < F/N < μs, both stick and slip pass
+  the acceleration-level checks. The engine drops the slipping mode when the same mode with the
+  contact sticking is valid, so x02a reports no `MODE_NOT_UNIQUE`. `MODE_NOT_UNIQUE` is kept for
+  valid modes with different motions that this rule does not settle (e.g. a non-P LCP). Valid
+  modes with the same motion (redundant supports) are a tie: `BOUNDARY_CASE` (info), and the most
+  active mode is chosen.
+- **The event's own constraint is not a tie.** λ = 0 at a slack event is the event itself; only
+  the boundary values of other candidates give `BOUNDARY_CASE`.
+- **Re-trigger: both schemes of the prompt.** Disarm-until-clear on the sample grid, plus the
+  event's direction (the fired state is forbidden), plus the snap. A pending mode guard that
+  crosses the far edge of its band fires anyway, so a mode chosen wrongly at higher order is never
+  kept.
+- **Segment guard.** ℓ ≥ 0 only touches 0, so the guard is d_k·(B − A), with d_k the direction at
+  the step start and a pulley's tangent point frozen there; a hit counts only if ℓ ≤ 1e-6·L\*.
+  Two simpler versions failed in testing: |P − c|² − R² misses a block rising along the tangent
+  line into its pulley, and projecting on the phase-start direction fires when a pendulum swings
+  through 90°. Geometry guards watch taut strings only.
+- Every event cuts the step and restarts the stepper, queries included (one code path).
+- `stats.rhsEvals` counts ODE RHS evaluations only, not the λ-guard solves at sample points.
+- Query ids share the element id namespace; a bad query reference is a compile error.
+
 ## Deviations from DESIGN.md
-- None. DESIGN §7 asks to check DOPRI5 "against the reference outputs". I checked the coefficients
-  against Hairer's source and by order conditions, and the behaviour on his test problems
+- **Prompt 03, initial candidates.** The prompt makes candidates of constraints with
+  |gap rate| ≤ εvel. At t₀ the engine also accepts closing rates (ġ < −εvel). Otherwise the
+  initial velocity projection of DESIGN §3.6 ("v_B set to 2.00 m/s by string 1") could never
+  happen, and that case would be an impact at t₀. After t₀ the prompt's rule applies.
+- **Prompt 03, the horizon is not an event record.** It is `endReason: 'horizon'`. The timeline
+  ends at `tEnd` anyway, and a record would only repeat it.
+- **Prompt 03, Trajectory fields.** Phases also carry `y0` (the state after the snap) and
+  `indeterminate`; stats also carry `rejected`, `phases` and `maxVelocityProjection`.
+- **Prompts 00–02: none.** DESIGN §7 asks to check DOPRI5 "against the reference outputs". I
+  checked the coefficients against Hairer's source and by order conditions, and the behaviour on his test problems
   (Arenstorf), but I did not diff step-by-step output against his Fortran driver: no Fortran
   toolchain here.
 - **Redundancy with sliding friction (prompt 02).** DESIGN §3.2 says that when the active
@@ -257,22 +357,6 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
   type-aware ESLint block to `apps/**/*.{ts,tsx}` with the DOM globals.
 - **TypeScript 7.** Move to it when typescript-eslint supports it.
 - **Node 24.** Bump `.nvmrc` to 24 (the active LTS) when convenient; CI follows `.nvmrc`.
-- **KKT inside the RHS (prompt 03).** `solveAccelerations` allocates and runs two QR rank checks
-  on every call (9.4 µs on t02b). In the ODE right-hand side and the λ(t) guards, run the rank
-  analysis (`solveKkt`) once per mode. Then call `assembleKkt` (no allocation) and
-  `luFactorInto` + `luSolve` on `sys.K`/`sys.rhs`; strings are `linear: false`, so re-assemble on
-  each call. `forceBreakdown` allocates a trace per string; keep it out of hot paths.
-- **Mode validation with indeterminate forces (prompt 03).** For a statically indeterminate mode
-  the returned λ are the minimum-norm split, which can be negative even when a split with all
-  λ ≥ 0 exists. "active ⇒ λ ≥ 0" must then be checked as feasibility over λ_p + null(C) (a small
-  LP), not on the min-norm values.
-- **Contact candidates (prompt 03).** Every body × face is a candidate, including faces that look
-  away from the body (for a block on a table, the table's bottom face has a large negative gap).
-  Candidates for activation need `contactOverlap > 0` and a small |gap|; a touchdown guard must
-  combine "gap crosses 0 downward" with overlap > 0.
-- **Wrap-angle guard (prompts 03–04).** `trace.wrap` is reduced to [0, 2π) and jumps at the cut.
-  The "wrap → 0" guard needs a continuous branch, e.g. unwrap relative to the value at the phase
-  start.
 - **Static corners against body faces (prompt 04).** Contacts are body × support face only. A
   support polygon's vertex can therefore enter a body's face unnoticed (a block falling onto a
   wedge's apex, or sliding past a corner). The body–body separating-axis guard planned for
@@ -281,14 +365,23 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
 - **Scene variants (prompt 04).** Scene files may carry `variants` (shallow spec overrides, e.g.
   `t02a/b/c`). The table-driven harness must expand them, keyed by the variant name in
   `expected.json`.
-- **hmax vs. exactness (prompt 03).** Uniformly accelerated motion is exact to 2.7e-14 over 500
-  steps but 1.7e-13 over 5000, because rounding in y ← y + h·Σbk accumulates. If the simulator caps
-  hmax tightly for guard sampling, consider compensated (Kahan) summation of the state update.
-  The `exact` class (1e-9) is far away either way.
-- **Trajectory memory (prompt 03).** A step record shares a ~32 KB chunk with its neighbours, so
-  keeping a few steps of a long run keeps their whole chunks alive. Copy steps out if a
-  trajectory is thinned.
-- **Tangential crossings (prompt 03).** A guard root of odd multiplicity ≥ 3 can end with
+- **Impacts (prompt 04).** `touchdown`/`taut` with ġ < −εvel end the run with
+  `impactNotImplemented`; replace that branch (`sim/hits.ts`, `sim/simulate.ts`). At t₀, a
+  closing candidate that mode selection leaves inactive is also an impact at t₀ (today its pending
+  guard fires at the edge of its band just after t₀).
+- **Terminal messages (prompt 04).** `terminal` events carry `data.guard`
+  (`segment:<string>:<s>` or `wrap:<string>:<node>`) but no diagnostic yet. The segment guard
+  already covers "a body reached its pulley".
+- **Harness (prompt 04).** t01's scene now holds a query (`m1_down_1m`), so the harness can read
+  query hits from `traj.queries`. `simulate-events.test.ts` builds its scenes inline (x04 is
+  prompt 04's scene file).
+- **Indeterminate phases.** Undetermined multipliers have no λ guards; feasibility is checked at
+  step ends only, so a regime change there is found late and ends the run. Locate it as an event
+  when a Phase 2+ scene needs it (a guard on the LP's optimal margin).
+- **Guard count.** Every body × support face gets a touchdown guard (confirmed by the overlap).
+  That is fine for school scenes; larger ones need pruning of faces whose gap cannot close (a broad
+  phase).
+- **Tangential crossings (prompt 03, still open).** A guard root of odd multiplicity ≥ 3 can end with
   `converged: false`; the bracket is still valid, so use it. Even-multiplicity tangencies are
   invisible to sign tests; bound `hmax`.
 - **fast-check.** DESIGN §7 lists fast-check for property tests. The numerics tests use seeded
@@ -298,8 +391,9 @@ checkout v7, pnpm/action-setup v6, setup-node v7, setup-python v7.
 - HINIT returns h = 0 when the scaled norm ‖f₀‖ overflows (|f|/atol > ~1e154), and the run then
   fails at once with `step-size-too-small` at t₀. Hairer's code does the same. SI-unit scenes are
   nowhere near it.
-- μk > μs is accepted without a diagnostic. Mode selection may then find both stick and slip
-  valid at v_t = 0 (`MODE_NOT_UNIQUE`, prompt 03).
+- μk > μs is accepted without a diagnostic. A block at rest pushed with μs·N < F < μk·N then has
+  no consistent mode (stick fails, either slip contradicts its own sign): the run ends with
+  `NO_CONSISTENT_MODE` (tested in `mode-select.test.ts`). The compiler could warn about μk > μs.
 - A pulley may appear twice in one route (not consecutively). The geometry handles it, but no test
   covers it.
 - `pnpm oracle` uses the first `python` on PATH. On this machine another Python install with SymPy 1.13.1

@@ -12,6 +12,8 @@ Each `*.json` file here is an engine `ModelSpec` wrapped in a small envelope:
 ```
 
 - `id` matches the scene's key in `../expected.json` when the scene has expected values.
+- `spec.queries` (optional) are event queries (`m1_down_1m` in t01); their hits are in
+  `traj.queries`.
 - `variants` (optional) are shallow overrides of top-level `spec` fields, applied as
   `{ ...spec, ...variant }`. A variant named after an `expected.json` key is that scene.
 - Geometry is textbook-exact: coordinates are dyadic rationals wherever possible, so horizontal and

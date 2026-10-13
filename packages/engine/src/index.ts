@@ -1,5 +1,5 @@
 /** Version of the engine's public API and Trajectory format; bump it on breaking changes. */
-export const ENGINE_VERSION = '0.2.0';
+export const ENGINE_VERSION = '0.3.0';
 
 export * from './numeric';
 
@@ -22,3 +22,4 @@ export * from './kkt/assemble';
 export * from './kkt/solve-system';
 export * from './forces';
 export * from './solve';
+export * from './sim';

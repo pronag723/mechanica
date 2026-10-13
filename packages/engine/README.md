@@ -1,6 +1,6 @@
 # @mech/engine
 
-Physics and numerics for the mechanics sandbox: the model, constraints, the KKT solve, DOPRI5 with dense output, events, mode selection and impacts (see `docs/DESIGN.md` §3).
+Physics and numerics for the mechanics sandbox: the model, constraints, the KKT solve, DOPRI5 with dense output, events, the hybrid simulator with mode selection, probes and queries (impacts: prompt 04) (see `docs/DESIGN.md` §3).
 
 - Zero runtime dependencies. No DOM, no Node APIs in `src/`.
 - Deterministic: no `Math.random`, `Date` or `performance.now` (enforced by ESLint). A benchmark inside a `*.test.ts` file may opt out with `// eslint-disable-next-line no-restricted-globals -- benchmark timing`; the opt-out is rejected anywhere else.
@@ -28,7 +28,18 @@ src/constraints/ row.ts (ConstraintRow), string.ts, contact.ts, index.ts (evalCo
 src/mode.ts      Mode and friction states
 src/kkt/         assemble.ts (layout and KKT assembly), solve-system.ts (LU fast path, rank analysis)
 src/forces.ts    force breakdown per body           src/solve.ts   solveAccelerations
-tests/           instantaneous.test.ts (scenes against expected.json)
+src/sim/         the hybrid simulator (prompt 03)
+  simulate.ts      the phase/event loop               initial.ts     initial mode, velocity projection
+  phase.ts         a phase: guard states, step-end projection, close + uniformity
+  phase-solver.ts  KKT inside the RHS (factor once if linear)   phase-eval.ts  cached solve at dense states
+  guards.ts        guard functions per phase          hits.ts        classifying hits at t*
+  mode-select.ts   abstract enumeration core          model-modes.ts candidates, the model's mode problem
+  feasibility.ts   λ-split feasibility (indeterminate)            projection.ts  q and v projection
+  steps.ts         stored dense output                trajectory.ts  stateAt, phaseAt, forcesAt, probes
+  probes.ts        probe evaluation                   path-length.ts ∫|v| dt, cached
+  query-runtime.ts queries during a run               tolerances.ts  every tolerance, from the scales
+  types.ts         Trajectory, events, options
+tests/           instantaneous.test.ts (prompt 02), simulate*.test.ts (scenes, events, behaviour)
 tests/helpers/   test-only helpers: seeded PRNG, finite differences with Richardson extrapolation,
                  scene loading, an angle-based reference construction of string paths
 ```
@@ -40,7 +51,7 @@ oracle's `tests/scenes/expected.json`.
 
 Everything below is exported from the package root (`@mech/engine`).
 
-`ENGINE_VERSION: string`: the version of the public API and the Trajectory format (`0.2.0`).
+`ENGINE_VERSION: string`: the version of the public API and the Trajectory format (`0.3.0`).
 
 ### Linear algebra (`numeric/linalg`)
 
@@ -109,6 +120,7 @@ The dense output reproduces every uniformly accelerated motion exactly, up to ro
   - Crossing rules: rising means `g_a < 0 ≤ g_b`, falling means `g_a > 0 ≥ g_b`. A guard that starts at exactly 0 and moves away does not fire.
   - It returns the earliest crossing in the integration direction, with every guard crossing within `simultaneityTol·max(1, |t|)` of it. Hits are sorted by id (their times differ only by rounding), and each is `{ id, index, t, lo, hi, crossing, converged }`.
   - Disarmed guards are never evaluated. A guard returning NaN throws.
+  - Optional per-guard window `from`/`to`: only sample intervals inside it can fire. `eventSampleTimes(step, samples)` returns the sample grid, so a window can start exactly at a sample (the simulator arms a guard from the sample where it left its ε-band).
 
 ```ts
 const ground: Guard = { id: 'B:floor', direction: 'falling', armed: true, fn: (_t, y) => y[0] };
@@ -191,6 +203,14 @@ Plain JSON, world coordinates. An annotated example (the t02 table scene, abridg
     },
   ],
   "appliedForces": [{ "id": "F", "body": "A", "force": { "x": 10, "y": 0 } }], // optional, constant
+  "queries": [
+    // optional, see "Probes and queries"
+    {
+      "id": "down1m",
+      "probe": { "kind": "bodyDisplacement", "body": "B", "axis": "y" },
+      "condition": { "kind": "equals", "value": -1 },
+    },
+  ],
   "options": { "horizon": 1, "rtol": 1e-10 }, // also atol?, maxEvents?
 }
 ```
@@ -200,25 +220,37 @@ Plain JSON, world coordinates. An annotated example (the t02 table scene, abridg
   vertices).
 - The friction of a body–support pair is the support's material; `pairOverrides` (either id order)
   replace individual fields, later entries winning.
+- Query ids share the id namespace. Their probe references (bodies, strings, contact ids
+  `c:<body>:<static>:<face>`) are checked by `compileModel` (`UNKNOWN_REFERENCE`); `model.queries`
+  holds them sorted by id.
 
 ### Diagnostics (`diagnostics.ts`)
 
 `Diagnostic = { code, severity: 'error' | 'warning' | 'info', elementIds, params, message }`. The UI
 localizes by `code` and `params`; `message` is English for developers. `hasErrors(list)`.
 
-| code                        | when                                                                                                             | severity | params                             |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------- |
-| `INVALID_ID`                | empty, contains `':'`, or duplicate                                                                              | error    | `kind, reason`                     |
-| `INVALID_PARAMETER`         | non-finite number, mass < 0, box w or h ≤ 0, μ < 0, e ∉ [0, 1], horizon ≤ 0, …                                   | error    | `field, reason`                    |
-| `SHAPE_INVALID`             | polygon with < 3 vertices, clockwise, or not strictly convex                                                     | error    | `reason`                           |
-| `UNKNOWN_REFERENCE`         | a route, applied force or pair override names a missing element (or one of the wrong kind)                       | error    | `field, ref, expected`             |
-| `STRING_ROUTE_INVALID`      | `tooShort`, `endNotEnd`, `viaNotPulley`, `repeatedPulley`, `noBody`, `wrapUnknown`                               | error    | `reason`                           |
-| `STRING_SEGMENT_DEGENERATE` | a segment shorter than 1e-9·L\* at t₀                                                                            | error    | `segment, length`                  |
-| `PULLEY_WRAP_INVALID`       | `tangentMissing` (an end inside a pulley, pulleys too close), `wrapZero`/`wrapFull` (within 1e-9 rad of 0 or 2π) | error    | `reason, segment` or `node, angle` |
-| `STRING_OVERSTRETCHED`      | `restLength` shorter than the length at t₀ by more than 1e-9·L\*                                                 | error    | `length, restLength`               |
-| `BODY_PENETRATES_STATIC`    | separating-axis overlap deeper than 1e-9·L\* at t₀                                                               | error    | `depth`                            |
-| `STATICALLY_INDETERMINATE`  | the active force columns are dependent: the forces are not unique, the motion is                                 | warning  | `constraints, friction`            |
-| `MOTION_UNDETERMINED`       | no unique motion in this mode (`singular`), or no motion at all (`inconsistent`)                                 | error    | `reason, constraints, bodies`      |
+| code                          | when                                                                                                             | severity | params                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------- |
+| `INVALID_ID`                  | empty, contains `':'`, or duplicate                                                                              | error    | `kind, reason`                         |
+| `INVALID_PARAMETER`           | non-finite number, mass < 0, box w or h ≤ 0, μ < 0, e ∉ [0, 1], horizon ≤ 0, …                                   | error    | `field, reason`                        |
+| `SHAPE_INVALID`               | polygon with < 3 vertices, clockwise, or not strictly convex                                                     | error    | `reason`                               |
+| `UNKNOWN_REFERENCE`           | a route, applied force or pair override names a missing element (or one of the wrong kind)                       | error    | `field, ref, expected`                 |
+| `STRING_ROUTE_INVALID`        | `tooShort`, `endNotEnd`, `viaNotPulley`, `repeatedPulley`, `noBody`, `wrapUnknown`                               | error    | `reason`                               |
+| `STRING_SEGMENT_DEGENERATE`   | a segment shorter than 1e-9·L\* at t₀                                                                            | error    | `segment, length`                      |
+| `PULLEY_WRAP_INVALID`         | `tangentMissing` (an end inside a pulley, pulleys too close), `wrapZero`/`wrapFull` (within 1e-9 rad of 0 or 2π) | error    | `reason, segment` or `node, angle`     |
+| `STRING_OVERSTRETCHED`        | `restLength` shorter than the length at t₀ by more than 1e-9·L\*                                                 | error    | `length, restLength`                   |
+| `BODY_PENETRATES_STATIC`      | separating-axis overlap deeper than 1e-9·L\* at t₀                                                               | error    | `depth`                                |
+| `STATICALLY_INDETERMINATE`    | the active force columns are dependent: the forces are not unique, the motion is                                 | warning  | `constraints, friction`                |
+| `MOTION_UNDETERMINED`         | no unique motion in this mode (`singular`), or no motion at all (`inconsistent`)                                 | error    | `reason, constraints, bodies`          |
+| `INITIAL_VELOCITY_PROJECTED`  | the initial velocities violated the active constraints and were projected                                        | warning  | `bodies, before, after` ("vx,vy")      |
+| `NO_CONSISTENT_MODE`          | mode selection found no valid mode (the run ends)                                                                | error    | `t, candidates`                        |
+| `MODE_NOT_UNIQUE`             | valid modes with different motions; one was chosen                                                               | warning  | `t, rule, chosen, alternatives`        |
+| `BOUNDARY_CASE`               | a tie (same motion in several modes) or a condition holding with equality                                        | info     | `t, chosen, alternatives`              |
+| `TOO_MANY_CANDIDATES`         | more than 10 candidates (or 65 536 combinations) at one instant (the run ends)                                   | error    | `t, count, candidates`                 |
+| `EVENT_LIMIT`                 | `maxEvents` reached, or 16 consecutive events at one instant (the run ends)                                      | error    | `t, reason: maxEvents\|stalled, count` |
+| `QUERY_UNSUPPORTED`           | max/min of a probe without an analytic rate (the query is skipped)                                               | warning  | `query, probe, condition`              |
+| `INDETERMINATE_REGIME_CHANGE` | a statically indeterminate mode loses its admissible load split (the run ends)                                   | error    | `t`                                    |
+| `INTEGRATION_FAILED`          | the stepper failed (`reason` from DOPRI5), or a selected mode could not be solved (the run ends)                 | error    | `t, reason`                            |
 
 ### `compileModel(spec) → { model: Model | null, diagnostics }` (`model/`)
 
@@ -369,3 +401,209 @@ const sol = solveAccelerations(model, mode, 0, model.q0, model.v0);
 sol.lambda.string; // T = 9.408 N (t02b)
 -sol.frictionLambda[TOP]; // F_fr = 7.84 N, pointing away from the pulley
 ```
+
+## Simulator (prompt 03)
+
+### `simulate(model, opts?) → Trajectory` (`sim/simulate.ts`)
+
+The event-driven hybrid simulation (DESIGN §3.3–3.4). The state is `y = [q, v]` (length `2·nDof`).
+Each phase has a fixed mode and a smooth right-hand side (a KKT solve in that mode); every
+non-smoothness is an event located on the dense output, followed by a new mode selection.
+
+```ts
+const { model } = compileModel(spec);
+const traj = simulate(model!, { horizon: 2 }); // opts: horizon, maxEvents, rtol, atol, hmax
+traj.endReason; // 'horizon' | 'impactNotImplemented' | 'noConsistentMode' | 'tooManyCandidates'
+//                 | 'terminal' | 'eventLimit' | 'indeterminateRegimeChange' | 'integrationFailed'
+traj.events; // [{ t, kind, ids, phaseBefore, phaseAfter, data }]
+traj.queries.down1m; // [{ t, value }]
+probeValue(model!, traj, { kind: 'stringTension', string: 'string' }, 0.5);
+```
+
+1. **Initialization.** Candidates are unilateral constraints with |g| ≤ εpos and ġ ≤ εvel (closing
+   allowed at t₀), contacts only inside their face (overlap > εpos); a contact with |v_t| ≤ εvel may
+   stick. After mode selection, q is projected onto g_A = 0 and v onto J_A·v = 0 in the M-metric;
+   changed velocities are reported (`INITIAL_VELOCITY_PROJECTED`) and the mode is selected again.
+2. **Integration.** DOPRI5, `rtol` 1e-10, `atol` 1e-12·L\* (positions) and 1e-12·V\*
+   (velocities), `hmax` = T\*. One stepper for the run, restarted at events. The RHS solves the
+   phase's KKT system: factored once per phase when every active row is linear, re-assembled
+   (without allocating) otherwise. A statically indeterminate mode is solved on a maximal
+   independent subset of its multipliers (same motion).
+3. **Projection.** After each accepted step with a nonlinear constraint active: Gauss–Newton on
+   g_A(q) = 0 in the M-metric (≤ 3 iterations, to 1e-12·L\*), then v onto J_A·v = 0. Stats keep
+   the largest corrections. An armed guard changing sign across the projection jump is an event.
+4. **Guards** (`sim/guards.ts`): the table below. Hits within εt = 1e-12·max(1, |t|) are handled
+   together, with one mode selection.
+5. **At an event**: y = dense(t\*), the step is cut there. Query hits are recorded and the phase
+   continues. Terminal geometry and impacts end the run. Mode events forbid the state their guard
+   fired from, then mode selection; the new phase starts with the snap (q onto g_A = 0, v onto
+   J_A·v = 0: v_t = 0 exactly for a new stick).
+6. **At rest**: if v = 0 and a = 0 exactly at a phase start, `atRestFrom` is set and one constant
+   step reaches the horizon (forces are constant in Phase 0, so nothing can change).
+
+| state             | guard (home side +, unless noted)        | event           | band    |
+| ----------------- | ---------------------------------------- | --------------- | ------- |
+| active string     | λ (tension)                              | `slack`         | εF      |
+| active contact    | λ_n                                      | `separation`    | εF      |
+| active contact    | overlap with the face's extent           | `leftSurface`   | εpos    |
+| slipPos / slipNeg | v_t (home + / −)                         | `stopOrReverse` | εvel    |
+| stick             | μs·λ_n − λ_t and μs·λ_n + λ_t            | `breakLoose`    | εF      |
+| inactive contact  | gap (only inside the face's extent)      | `touchdown`     | εpos    |
+| inactive string   | gap = L₀ − L                             | `taut`          | εpos    |
+| active string     | segment: d_k·(B − A), confirmed by ℓ ≈ 0 | `terminal`      | εpos    |
+| active string     | wrap angle, unwrapped step to step       | `terminal`      | 1e-9    |
+| query             | probe − value, or its rate (max/min)     | `query`         | 1e-9·sc |
+
+`touchdown`/`taut` with ġ < −εvel would be an impact: the run ends with `impactNotImplemented`
+(prompt 04). With |ġ| ≤ εvel the constraint joins the mode selection instead. Simultaneous hits
+on one constraint give one event record (lift-off subsumes the friction cone's margins).
+
+The segment guard d_k·(B − A) uses the segment's direction at the start of the current step and
+freezes a pulley's tangent point there: ℓ itself only touches 0 (a hanging block rising along the
+tangent line into its pulley), while this quantity changes sign. A hit counts only if ℓ ≤ 1e-6·L\*
+(otherwise the end passed beside its anchor).
+
+#### Tolerances (`sim/tolerances.ts`)
+
+All from the scene scales (`model.scales`): L\*, V\*, F\*, T\* = L\*/V\*, A\* = V\*²/L\*.
+
+| name       | value               | used for                                                     |
+| ---------- | ------------------- | ------------------------------------------------------------ |
+| εpos       | 1e-9·L\*            | candidate gaps, contact overlap, guard bands                 |
+| εvel       | 1e-9·V\*            | candidate gap rates, stick candidates, impact vs. soft touch |
+| εa         | 1e-9·A\*            | validation of g̈ ≥ 0 and the slip sign; "same motion"         |
+| εF         | 1e-9·F\*            | validation of λ ≥ 0 and the friction cone; guard bands       |
+| projection | 1e-12·L\*           | Gauss–Newton target; v projected when \|J·v\| > 1e-13·V\*    |
+| uniform    | 1e-12 relative      | `phase.uniform` (floors: A\* for a, F\* for λ)               |
+| εt         | 1e-12·max(1, \|t\|) | simultaneous events                                          |
+
+#### Re-trigger protection
+
+Right after an event the quantity that fired is still ≈ 0 (the gap after lift-off, v_t after
+sticking). Three layers:
+
+1. **Snap**: the new phase starts exactly on its constraints (v_t = 0, gap = 0).
+2. **Disarm until clear**: a guard whose value at the phase start lies within its band is
+   _pending_; it is armed from the first sample (of locateEvents' grid) where it is beyond the band
+   on its home side. While pending, a mode guard still fires at the band's far edge (the mode was
+   wrong at higher order); queries never fire from pending. A touchdown guard outside its face's
+   extent is _dormant_ until it clears its band (the body came back above the face plane).
+3. **Direction from the event**: the state a guard fired from is forbidden in the mode selection
+   at that instant (slack ⇒ inactive, stopOrReverse ⇒ not the old slip sign, breakLoose ⇒ not
+   stick), so a tie at the boundary cannot select the old mode again.
+
+As a last resort, 16 consecutive events at one instant end the run (`EVENT_LIMIT`, `stalled`).
+Tests: x01 (exactly one event, then at rest), x02b (slip from v_t = 0 without a stop event), x03
+(slack then taut: two events), lift-off (one record, not three), and no two events within 1e-9 s
+in any scene.
+
+### Mode selection (`sim/mode-select.ts`, `sim/model-modes.ts`)
+
+`selectMode(problem)` works on an abstract `ModeProblem`: candidates with their allowed states
+(most preferred first; `'active'` for strings, `'stick' | 'slipPos' | 'slipNeg'` for contacts,
+`'inactive'`), a `solve(states)` callback returning a, λ, λ_t, g̈ of inactive candidates, a_t of
+slipping ones (and a multiplier null-space basis when indeterminate), and the tolerances.
+
+- Enumeration: by distance from the preferred states (the current mode), then lexicographic;
+  all combinations are evaluated (`enumerateCombinations`). More than 10 candidates or 65 536
+  combinations: `tooManyCandidates`.
+- Validation: active λ ≥ −εF; inactive g̈ ≥ −εa; stick |λ_t| ≤ μs·λ_n + εF; a slip from v_t ≈ 0
+  needs s·a_t ≥ −εa. Indeterminate modes: some λ = λ_p + Z·w must satisfy them
+  (`linearFeasible`, vertex enumeration).
+- Choice: Coulomb's rule first (a valid stick beats the same mode slipping there); then one motion
+  ⇒ `unique` (the most active, most sticking mode; `boundary` if several or a check within ε);
+  different motions ⇒ `notUnique`, first in enumeration order (`closestToCurrent`).
+- Result: `{ status: 'unique' | 'notUnique' | 'none' | 'tooManyCandidates', chosen, valid,
+admissible, boundary, rule, evaluated, undetermined }`.
+
+On a model: `findCandidates(model, q, v, tol, { allowClosing?, exclude? })` and
+`selectModelMode(model, t, q, v, candidates, tol, { current?, forbidden?, involved? })` →
+`{ mode, selection, diagnostics }` (NO_CONSISTENT_MODE, MODE_NOT_UNIQUE, BOUNDARY_CASE,
+TOO_MANY_CANDIDATES, plus the chosen solve's STATICALLY_INDETERMINATE). `modeIsFeasible` re-checks
+a mode at a state. `simTolerances(model.scales)` gives the tolerances.
+
+### Trajectory (`sim/types.ts`)
+
+Plain data: survives `structuredClone` (tested), no classes, closures or Maps.
+
+```ts
+interface Trajectory {
+  dim: number; // 2·nDof
+  nDof: number;
+  tEnd: number;
+  phases: {
+    index: number;
+    tStart: number;
+    tEnd: number;
+    mode: Mode;
+    y0: Float64Array; // state at tStart, after the snap
+    steps: { t0: Float64Array; h: Float64Array; coeffs: Float64Array }; // 5 × dim per step
+    uniform: boolean; // a and λ constant to 1e-12 (start, middle, end)
+    indeterminate: boolean; // STATICALLY_INDETERMINATE in this mode
+  }[];
+  events: { t; kind; ids; phaseBefore; phaseAfter; data }[]; // phaseAfter −1: the run ended
+  queries: Record<string, { t: number; value: number }[]>;
+  diagnostics: Diagnostic[];
+  endReason: EndReason;
+  atRestFrom?: number;
+  stats: {
+    steps;
+    rejected;
+    rhsEvals;
+    events;
+    phases;
+    maxProjection;
+    maxVelocityProjection;
+    wallMs?;
+  };
+}
+```
+
+Step k of a phase covers [t0[k], t0[k+1]) (the last one up to tEnd) and evaluates Hairer's CONTD5
+polynomial with θ = (t − t0[k])/h[k]; a step cut by an event keeps its h. `wallMs` is for the
+caller to set (the engine cannot read clocks). Event kinds: `separation`, `slack`, `touchdown`,
+`taut`, `stopOrReverse`, `breakLoose`, `leftSurface`, `terminal`, `query`. The horizon is an
+`endReason`, not an event record. Query hits do not split phases.
+
+### Reading a trajectory (`sim/trajectory.ts`)
+
+Free functions over `(model, traj)`; they work on a clone. At an event time the default side is
+`'after'` (the new phase, after the snap); `'before'` reads the phase that ends there.
+
+- `stateAt(traj, t, side?)` → `{ t, phase, step, q, v }`; `phaseAt(traj, t, side?)` → index.
+- `forcesAt(model, traj, t, side?)` → `AccelerationSolution` (one KKT solve in the phase's mode,
+  with the force breakdown).
+- `probeValue(model, traj, probe, t, side?)`; `sampleProbe(model, traj, probe, times | n)` →
+  `{ t, values }` (n points over [0, tEnd], both ends included).
+
+Times outside [0, tEnd] (or a trajectory without phases) throw `RangeError`.
+
+### Probes and queries (`sim/probes.ts`, `spec.ts`)
+
+`ProbeRef` is one of `bodyPosition {body, component}`, `bodyDisplacement {body, axis?}` (from the
+position at t = 0 after the initial projection; along `axis` = 'x' | 'y' | a vector, or its
+length), `bodyVelocity {body, component}`, `bodySpeed {body}`,
+`bodyAcceleration {body, component}`, `bodyPathLength {body}`, `kineticEnergy {body?}`,
+`potentialEnergy {body?}` (gravity, −m·g·p), `totalEnergy {body?}`, `stringTension {string}`,
+`contactNormal {contact}`, `contactFriction {contact}` (signed along +t),
+`contactRegime {contact}` (`CONTACT_REGIME`: 0 inactive, 1 stick, 2 slipPos, 3 slipNeg). Forces of
+an inactive constraint read 0; statically indeterminate ones read NaN.
+
+**Path length** is not an ODE state (|v| is not smooth): each stored step is split at the sign
+changes of v_x and v_y and integrated with 8-point Gauss–Legendre (exact for 1-D motion);
+cumulative values are cached per trajectory.
+
+**Queries** (`spec.queries`): `{ id, probe, condition }` with `condition` one of
+`{ kind: 'equals', value, direction?: 'rising' | 'falling' | 'any' }`, `{ kind: 'max' }`,
+`{ kind: 'min' }`. They are guards: hits go to `traj.queries[id]` and `query` events, and the mode
+is unchanged. max/min use the probe's analytic rate (positions and axis displacements → velocity,
+velocities → acceleration); other probes give `QUERY_UNSUPPORTED`. A value jumping across the
+target at an event is not a hit; extrema at 0 or tEnd are not reported.
+
+### Known limits (Phase 0)
+
+- Constant forces only, so "at rest" is final. Impacts end the run (prompt 04).
+- Statically indeterminate modes have no λ guards on their undetermined multipliers; the mode's
+  feasibility is re-checked at each step end instead, and a loss ends the run
+  (`INDETERMINATE_REGIME_CHANGE`).
+- String geometry guards watch taut strings only (a slack string has no path in Phase 0).

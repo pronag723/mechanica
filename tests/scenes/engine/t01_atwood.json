@@ -32,6 +32,13 @@
         ]
       }
     ],
+    "queries": [
+      {
+        "id": "m1_down_1m",
+        "probe": { "kind": "bodyDisplacement", "body": "m1", "axis": "y" },
+        "condition": { "kind": "equals", "value": -1 }
+      }
+    ],
     "options": { "horizon": 1.2 }
   }
 }

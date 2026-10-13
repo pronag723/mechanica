@@ -6,7 +6,7 @@ import { type Diagnostic, diagnostic } from '../diagnostics';
 import { polygonProblem } from '../geometry/shapes';
 import type { Material, ModelSpec, RouteNode, Vec2 } from '../spec';
 
-export type ElementKind = 'body' | 'static' | 'pulley' | 'string' | 'appliedForce';
+export type ElementKind = 'body' | 'static' | 'pulley' | 'string' | 'appliedForce' | 'query';
 
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const finiteVec = (v: Vec2 | undefined): boolean => v !== undefined && finite(v.x) && finite(v.y);
@@ -106,6 +106,7 @@ export function validateSpec(spec: ModelSpec): {
   for (const p of spec.pulleys) visitId(p.id, 'pulley');
   for (const s of spec.strings) visitId(s.id, 'string');
   for (const f of spec.appliedForces ?? []) visitId(f.id, 'appliedForce');
+  for (const qs of spec.queries ?? []) visitId(qs.id, 'query');
 
   if (!finiteVec(spec.gravity)) bad('', 'gravity', 'notFinite', 'must be a finite vector');
   const o = spec.options;

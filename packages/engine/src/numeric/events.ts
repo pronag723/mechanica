@@ -24,6 +24,13 @@ export interface Guard {
   readonly armed: boolean;
   /** Guard value at time t; `y` is the dense state at t, a scratch buffer valid only during the call. */
   fn(t: number, y: Float64Array): number;
+  /**
+   * Optional window: only sample intervals [t_j, t_j+1] with from ≤ t_j and t_j+1 ≤ to (in the
+   * direction of integration) can fire. Pass sample times (see `eventSampleTimes`) for an exact
+   * cut. The simulator uses it to arm a guard from the sample at which it has left an ε-band.
+   */
+  readonly from?: number;
+  readonly to?: number;
 }
 
 export interface EventHit {
@@ -69,7 +76,6 @@ export function locateEvents(
   const rootTol = opts?.rootTol ?? 1e-13;
   const maxIterations = opts?.maxIterations ?? 80;
   const y = opts?.scratch ?? new Float64Array(step.n);
-  const { t0, t1 } = step;
   const m = k + 2;
 
   const armed: number[] = [];
@@ -77,8 +83,7 @@ export function locateEvents(
   if (armed.length === 0) return null;
 
   // Sample all armed guards; the dense state at each sample time is shared by the guards.
-  const times: number[] = [];
-  for (let j = 0; j < m; j++) times.push(j === m - 1 ? t1 : t0 + (j / (k + 1)) * (t1 - t0));
+  const times = eventSampleTimes(step, k);
   const values: number[] = new Array<number>(armed.length * m);
   for (let j = 0; j < m; j++) {
     evalDense(step, times[j], y);
@@ -87,11 +92,18 @@ export function locateEvents(
     }
   }
 
+  // Integration order: later = further along h's sign.
+  const sgn = step.h >= 0 ? 1 : -1;
+
   // First qualifying sample interval of each guard, in time order.
   const candidates: { a: number; j: number }[] = [];
   for (let a = 0; a < armed.length; a++) {
-    const dir = guards[armed[a]].direction;
+    const guard = guards[armed[a]];
+    const dir = guard.direction;
+    const from = guard.from === undefined ? -Infinity : sgn * guard.from;
+    const to = guard.to === undefined ? Infinity : sgn * guard.to;
     for (let j = 0; j < m - 1; j++) {
+      if (sgn * times[j] < from || sgn * times[j + 1] > to) continue;
       if (crosses(dir, values[a * m + j], values[a * m + j + 1])) {
         candidates.push({ a, j });
         break;
@@ -101,8 +113,6 @@ export function locateEvents(
   if (candidates.length === 0) return null;
   candidates.sort((p, q) => p.j - q.j || p.a - q.a);
 
-  // Integration order: later = further along h's sign.
-  const sgn = step.h >= 0 ? 1 : -1;
   const eps = (t: number) => (opts?.simultaneityTol ?? 1e-12) * Math.max(1, Math.abs(t));
   const hits: EventHit[] = [];
   let best = Infinity; // sgn·t of the earliest root so far
@@ -141,6 +151,18 @@ export function locateEvents(
   // Their times differ by rounding noise only, so order by id: deterministic under rounding.
   simultaneous.sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : p.index - q.index));
   return { t: tFirst, hits: simultaneous };
+}
+
+/**
+ * The sample times locateEvents uses on `step` with `samples` interior points: t0, k equally
+ * spaced interior points, and t1 exactly.
+ */
+export function eventSampleTimes(step: AcceptedStep, samples = 4): number[] {
+  const m = samples + 2;
+  const times: number[] = [];
+  for (let j = 0; j < m; j++)
+    times.push(j === m - 1 ? step.t1 : step.t0 + (j / (samples + 1)) * (step.t1 - step.t0));
+  return times;
 }
 
 function crosses(dir: GuardDirection, ga: number, gb: number): boolean {

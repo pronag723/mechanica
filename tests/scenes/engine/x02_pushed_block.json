@@ -1,0 +1,35 @@
+{
+  "id": "x02_pushed_block",
+  "description": "A block (M = 1 kg) at rest on a floor (μs = 0.2, μk = 0.1) pushed by a constant horizontal force F. Variant a: F = 1.5 N < μs·N = 1.96 N, it stays (static friction −1.5 N). Variant b: F = 2.5 N, it slips from t = 0 with a = (F − μk·M·g)/M = 1.52 m/s².",
+  "spec": {
+    "gravity": { "x": 0, "y": -9.8 },
+    "bodies": [
+      {
+        "id": "A",
+        "symbol": "A",
+        "mass": 1,
+        "shape": { "kind": "box", "w": 0.25, "h": 0.25 },
+        "position": { "x": 0, "y": 0.125 }
+      }
+    ],
+    "statics": [
+      {
+        "id": "floor",
+        "kind": "halfPlane",
+        "point": { "x": 0, "y": 0 },
+        "normal": { "x": 0, "y": 1 },
+        "material": { "muS": 0.2, "muK": 0.1, "restitution": 0 }
+      }
+    ],
+    "pulleys": [],
+    "strings": [],
+    "appliedForces": [{ "id": "F", "symbol": "F", "body": "A", "force": { "x": 1.5, "y": 0 } }],
+    "options": { "horizon": 1 }
+  },
+  "variants": {
+    "x02a_force_below_static": {},
+    "x02b_force_above_static": {
+      "appliedForces": [{ "id": "F", "symbol": "F", "body": "A", "force": { "x": 2.5, "y": 0 } }]
+    }
+  }
+}

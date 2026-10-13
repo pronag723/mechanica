@@ -1,0 +1,30 @@
+{
+  "id": "x03_whirl_slack",
+  "description": "A small block (1 kg) on a string of length L = 1 m from a fixed point, given v0 = 6 m/s horizontally at the bottom. The string goes slack above the horizontal where cos φ = (2gL − v0²)/(3gL) (φ from the downward vertical); the block then flies freely until the string is taut again (an impact: prompt 04). The string is a nonlinear constraint: tests the drift projection and the slack event.",
+  "spec": {
+    "gravity": { "x": 0, "y": -9.8 },
+    "bodies": [
+      {
+        "id": "m",
+        "symbol": "m",
+        "mass": 1,
+        "shape": { "kind": "box", "w": 0.0625, "h": 0.0625 },
+        "position": { "x": 0, "y": -1 },
+        "velocity": { "x": 6, "y": 0 }
+      }
+    ],
+    "statics": [],
+    "pulleys": [],
+    "strings": [
+      {
+        "id": "string",
+        "symbol": "T",
+        "route": [
+          { "kind": "fixed", "point": { "x": 0, "y": 0 } },
+          { "kind": "body", "body": "m", "anchor": { "x": 0, "y": 0 } }
+        ]
+      }
+    ],
+    "options": { "horizon": 3 }
+  }
+}
